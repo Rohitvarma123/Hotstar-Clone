@@ -3,7 +3,7 @@ name: CI/CD - Build & Deploy to ECS
 
 on:
   push:
-    branches: [ main ]
+    branches: [ master ]
 
 permissions:
   id-token: write   # needed for OIDC
@@ -59,3 +59,7 @@ jobs:
           # get latest task definition arn
           NEW_TASK_DEF_ARN=$(aws ecs list-task-definitions --family-prefix my-app-task --sort DESC --max-items 1 --query 'taskDefinitionArns[0]' --output text)
           aws ecs update-service --cluster $CLUSTER --service $SERVICE --task-definition $NEW_TASK_DEF_ARN
+
+
+
+          
