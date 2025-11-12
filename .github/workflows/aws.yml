@@ -3,7 +3,7 @@ name: Build and Deploy to Amazon ECS
 on:
   push:
     branches:
-      - main  # Trigger only when code is pushed to main branch
+      - master  # Trigger only when code is pushed to main branch
 
 permissions:
   id-token: write       # Required for OIDC
