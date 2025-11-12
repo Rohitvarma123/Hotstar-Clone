@@ -65,3 +65,6 @@ aws ecs describe-task-definition --task-definition $FAMILY > current-taskdef.jso
 
 # Extract the taskDefinition portion and remove fields that can't be present when registering
 aws ecs update-service --cluster $CLUSTER --service $SERVICE --task-definition $NEW_TASK_DEF_ARN
+
+
+
