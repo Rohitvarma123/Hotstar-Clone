@@ -3,11 +3,7 @@ name: Build and Deploy to Amazon ECS
 on:
   push:
     branches:
-      - master  # Trigger only when code is pushed to main branch
-
-permissions:
-  id-token: write       # Required for OIDC
-  contents: read
+      - master  # Trigger only when code is pushed to master branch
 
 env:
   AWS_REGION: ap-northeast-1
@@ -15,7 +11,7 @@ env:
   ECR_REPOSITORY: my-app
   ECS_CLUSTER: my-ecs-cluster
   ECS_SERVICE: my-ecs-service
-  ECS_TASK_DEFINITION: my-ecs-task
+  ECS_TASK_DEFINITION: .aws/task-definition.json
   CONTAINER_NAME: my-container
 
 jobs:
@@ -23,20 +19,25 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      # 1️⃣ Checkout source code
       - name: Checkout source
         uses: actions/checkout@v4
 
-      - name: Configure AWS credentials (OIDC)
+      # 2️⃣ Configure AWS credentials using secrets
+      - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v2
         with:
-          role-to-assume: arn:aws:iam::${{ env.AWS_ACCOUNT_ID }}:role/GitHubActions-Hoster-clone-role
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_REGION }}
 
+      # 3️⃣ Login to Amazon ECR
       - name: Login to Amazon ECR
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v1
 
-      - name: Build, tag, and push Docker image to ECR
+      # 4️⃣ Build, tag, and push Docker image
+      - name: Build, tag, and push Docker image
         id: build-image
         env:
           ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
@@ -48,6 +49,7 @@ jobs:
           docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
           echo "image=$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG" >> $GITHUB_OUTPUT
 
+      # 5️⃣ Render ECS task definition
       - name: Render Amazon ECS task definition
         id: task-def
         uses: aws-actions/amazon-ecs-render-task-definition@v1
@@ -56,6 +58,7 @@ jobs:
           container-name: ${{ env.CONTAINER_NAME }}
           image: ${{ steps.build-image.outputs.image }}
 
+      # 6️⃣ Deploy ECS task definition
       - name: Deploy Amazon ECS task definition
         uses: aws-actions/amazon-ecs-deploy-task-definition@v1
         with:
@@ -63,12 +66,3 @@ jobs:
           service: ${{ env.ECS_SERVICE }}
           cluster: ${{ env.ECS_CLUSTER }}
           wait-for-service-stability: true
-
-
-          
-
-
-
-
-
-          
