@@ -1,34 +1,33 @@
-name: Build and Deploy to Amazon ECS
+name: Build and Deploy to EKS
 
 on:
   push:
     branches:
-      - master  # Trigger only when code is pushed to master branch
+      - master  # Run only when pushing to master branch
 
 env:
   AWS_REGION: ap-northeast-1
   AWS_ACCOUNT_ID: 800261073853
   ECR_REPOSITORY: my-app
-  ECS_CLUSTER: my-ecs-cluster
-  ECS_SERVICE: my-ecs-service
-  ECS_TASK_DEFINITION: src/ecs-task-definition.json
+  CLUSTER_NAME: my-eks-cluster
+  DEPLOYMENT_NAME: my-app-deployment
   CONTAINER_NAME: my-container
+  K8S_NAMESPACE: default
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
 
     steps:
-      # 1️⃣ Checkout source code
-      - name: Checkout source
+      # 1️⃣ Checkout code
+      - name: Checkout repository
         uses: actions/checkout@v4
 
-      # 2️⃣ Configure AWS credentials using secrets
+      # 2️⃣ Configure AWS credentials
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v2
         with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          role-to-assume: arn:aws:iam::800261073853:role/GitHubActions-Hoster-clone-role
           aws-region: ${{ env.AWS_REGION }}
 
       # 3️⃣ Login to Amazon ECR
@@ -37,77 +36,24 @@ jobs:
         uses: aws-actions/amazon-ecr-login@v1
 
       # 4️⃣ Build, tag, and push Docker image
-      - name: Build, tag, and push Docker image
+      - name: Build and push Docker image
         id: build-image
         env:
           ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
           IMAGE_TAG: ${{ github.sha }}
         run: |
-          echo "🔨 Building Docker image..."
           docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
-          echo "🚀 Pushing image to ECR..."
           docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
           echo "image=$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG" >> $GITHUB_OUTPUT
 
-      # 5️⃣ Render ECS task definition
-      - name: Render Amazon ECS task definition
-        id: task-def
-        uses: aws-actions/amazon-ecs-render-task-definition@v1
-        with:
-          task-definition: ${{ env.ECS_TASK_DEFINITION }}
-          container-name: ${{ env.CONTAINER_NAME }}
-          image: ${{ steps.build-image.outputs.image }}
+      # 5️⃣ Update kubeconfig for EKS
+      - name: Update kubeconfig for EKS
+        run: |
+          aws eks update-kubeconfig --region $AWS_REGION --name $CLUSTER_NAME
 
-      # 6️⃣ Deploy ECS task definition
-      - name: Deploy Amazon ECS task definition
-        uses: aws-actions/amazon-ecs-deploy-task-definition@v1
-        with:
-          task-definition: ${{ steps.task-def.outputs.task-definition }}
-          service: ${{ env.ECS_SERVICE }}
-          cluster: ${{ env.ECS_CLUSTER }}
-          wait-for-service-stability: true
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-          
-
-
-
-
-
-
-
-          
-
-
-
-          
+      # 6️⃣ Deploy to EKS
+      - name: Deploy to EKS
+        run: |
+          kubectl set image deployment/${DEPLOYMENT_NAME} ${CONTAINER_NAME}=${{ steps.build-image.outputs.image }} -n $K8S_NAMESPACE
+          kubectl rollout status deployment/${DEPLOYMENT_NAME} -n $K8S_NAMESPACE
+          kubectl get pods -n $K8S_NAMESPACE
