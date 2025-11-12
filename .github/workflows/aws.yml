@@ -15,7 +15,7 @@ env:
   ECR_REPOSITORY: my-app
   ECS_CLUSTER: my-ecs-cluster
   ECS_SERVICE: my-ecs-service
-  ECS_TASK_DEFINITION: .aws/task-definition.json
+  ECS_TASK_DEFINITION: my-ecs-task
   CONTAINER_NAME: my-container
 
 jobs:
@@ -63,6 +63,9 @@ jobs:
           service: ${{ env.ECS_SERVICE }}
           cluster: ${{ env.ECS_CLUSTER }}
           wait-for-service-stability: true
+
+
+          
 
 
 
