@@ -1,24 +1,42 @@
+name: Build and Push Docker Image to ECR
+
+on:
+  push:
+    branches:
+      - main
+
 jobs:
   build-and-push:
     runs-on: ubuntu-latest
     permissions:
-      id-token: write                # REQUIRED for OIDC
+      id-token: write
       contents: read
-    steps:
-      - uses: actions/checkout@v4
 
-      - name: Configure AWS credentials from OIDC
+    env:
+      AWS_REGION: ${{ vars.AWS_REGION }}
+      ECR_REPOSITORY: ${{ vars.ECR_REPOSITORY }}
+      AWS_ACCOUNT_ID: ${{ vars.AWS_ACCOUNT_ID }}
+
+    steps:
+      - name: Checkout source code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials using OIDC
         uses: aws-actions/configure-aws-credentials@v2
         with:
-          role-to-assume: arn:aws:iam::800261073853:role/GitHubActions-Hoster-clone-role
-          aws-region: ap-south-1
+          role-to-assume: arn:aws:iam::${{ env.AWS_ACCOUNT_ID }}:role/GitHubActions-Hoster-clone-role
+          aws-region: ${{ env.AWS_REGION }}
 
-      - name: Login to ECR
+      - name: Login to Amazon ECR
         run: |
-          aws ecr get-login-password --region ${{ env.AWS_REGION }} | docker login --username AWS --password-stdin 123456789012.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com
+          aws ecr get-login-password --region $AWS_REGION | \
+          docker login --username AWS --password-stdin $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com
 
-      - name: Build, tag and push
+      - name: Build Docker image
         run: |
-          docker build -t my-app:latest .
-          docker tag my-app:latest 123456789012.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/my-app:latest
-          docker push 123456789012.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/my-app:latest
+          docker build -t $ECR_REPOSITORY:latest .
+
+      - name: Tag and Push Docker image to ECR
+        run: |
+          docker tag $ECR_REPOSITORY:latest $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$ECR_REPOSITORY:latest
+          docker push $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$ECR_REPOSITORY:latest
