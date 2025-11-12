@@ -1,70 +1,24 @@
-name: CI/CD - Build & Deploy to ECS
-
-
-on:
-push:
-branches: [ master]
-
-
-permissions:
-id-token: write
-contents: read
-
-
-env:
-AWS_REGION: us-east-1
-AWS_ACCOUNT_ID: 800261073853 # replace
-ECR_REPOSITORY: my-app
-ECS_CLUSTER: my-app-cluster
-ECS_SERVICE: my-app-service
-TASK_FAMILY: my-app-task
-
-
 jobs:
-build-and-deploy:
-runs-on: ubuntu-latest
-steps:
-- name: Checkout repository
-uses: actions/checkout@v4
+  build-and-push:
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write                # REQUIRED for OIDC
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
 
+      - name: Configure AWS credentials from OIDC
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          role-to-assume: arn:aws:iam::800261073853:role/GitHubActions-Hoster-clone-role
+          aws-region: ap-south-1
 
-- name: Configure AWS credentials (OIDC)
-uses: aws-actions/configure-aws-credentials@v2
-with:
-role-to-assume: arn:aws:iam::${{ env.AWS_ACCOUNT_ID }}:role/GitHubActionsECRRole
-aws-region: ${{ env.AWS_REGION }}
+      - name: Login to ECR
+        run: |
+          aws ecr get-login-password --region ${{ env.AWS_REGION }} | docker login --username AWS --password-stdin 123456789012.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com
 
-
-- name: Login to Amazon ECR
-id: login-ecr
-uses: aws-actions/amazon-ecr-login@v1
-
-
-- name: Build and push Docker image to ECR
-id: build-image
-run: |
-IMAGE_TAG=${GITHUB_SHA::8}
-REPO_URI=${{ env.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/${{ env.ECR_REPOSITORY }}
-echo "Building $REPO_URI:$IMAGE_TAG"
-docker build -t $REPO_URI:$IMAGE_TAG .
-docker push $REPO_URI:$IMAGE_TAG
-echo "IMAGE_URI=$REPO_URI:$IMAGE_TAG" >> $GITHUB_ENV
-
-
-- name: Fetch current task definition and create new revision with new image
-id: register-task
-run: |
-set -e
-FAMILY=${{ env.TASK_FAMILY }}
-IMAGE_URI=${IMAGE_URI}
-
-
-# download current task definition
-aws ecs describe-task-definition --task-definition $FAMILY > current-taskdef.json
-
-
-# Extract the taskDefinition portion and remove fields that can't be present when registering
-aws ecs update-service --cluster $CLUSTER --service $SERVICE --task-definition $NEW_TASK_DEF_ARN
-
-
-
+      - name: Build, tag and push
+        run: |
+          docker build -t my-app:latest .
+          docker tag my-app:latest 123456789012.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/my-app:latest
+          docker push 123456789012.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/my-app:latest
