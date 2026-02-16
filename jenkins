@@ -1,0 +1,63 @@
+pipeline {
+    agent { label 'agent1' }
+
+    environment {
+        PROD_USER = "ubuntu"
+        PROD_HOST = "54.92.87.240"
+        APP_DIR   = "/var/www/hotstar"
+        APP_NAME  = "hotstar"
+    }
+
+    stages {
+
+        stage('Checkout') {
+            steps {
+                git 'git@github.com:Rohitvarma123/Hotstar-Clone.git'
+            }
+        }
+
+        stage('Install Dependencies') {
+            steps {
+                sh 'npm install'
+            }
+        }
+
+        stage('Build') {
+            steps {
+                sh 'npm run build || echo "React build step skipped"'
+            }
+        }
+
+        stage('Deploy') {
+            steps {
+                sh """
+                ssh ${PROD_USER}@${PROD_HOST} 'mkdir -p ${APP_DIR}'
+                rsync -avz --delete ./ ${PROD_USER}@${PROD_HOST}:${APP_DIR}/
+                """
+            }
+        }
+
+        stage('Start Application using PM2') {
+            steps {
+                sh """
+                ssh ${PROD_USER}@${PROD_HOST} '
+                  cd ${APP_DIR} &&
+                  npm install &&
+                  pm2 delete ${APP_NAME} || true &&
+                  pm2 start npm --name "${APP_NAME}" -- start &&
+                  pm2 save
+                '
+                """
+            }
+        }
+    }
+
+    post {
+        success {
+            echo "Hotstar Clone Deployed Successfully 🚀"
+        }
+        failure {
+            echo "Deployment Failed ❌"
+        }
+    }
+}
