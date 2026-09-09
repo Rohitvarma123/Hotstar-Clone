@@ -1,0 +1,26 @@
+apiVersion: apps/v1
+kind: Deployment
+
+metadata:
+  name: hotstar-frontend
+
+spec:
+  replicas: 2
+
+  selector:
+    matchLabels:
+      app: hotstar-frontend
+
+  template:
+    metadata:
+      labels:
+        app: hotstar-frontend
+
+    spec:
+      containers:
+        - name: hotstar-frontend
+
+          image: rohitvarmamuthyam/hotstar-frontend:v1
+
+          ports:
+            - containerPort: 80
