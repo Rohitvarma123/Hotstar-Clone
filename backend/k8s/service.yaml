@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: Service
+
+metadata:
+  name: hotstar-backend
+
+spec:
+  selector:
+    app: hotstar-backend
+
+  ports:
+    - port: 8080
+      targetPort: 8080
+
+  type: LoadBalancer
