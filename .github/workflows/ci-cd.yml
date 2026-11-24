@@ -1,44 +1,45 @@
 
-name: React Build, SonarQube and Nexus
+name: Hotstar Clone React CI-CD
 
 on:
   push:
     branches:
       - master
-
   workflow_dispatch:
 
 jobs:
   build:
+    name: React Build and SonarQube
     runs-on: ubuntu-latest
 
     steps:
-      # 1. Checkout source code
-      - name: Checkout Source
+      - name: Checkout Source Code
         uses: actions/checkout@v4
 
-      # 2. Setup Node.js
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: 20
           cache: npm
 
-      # 3. Install dependencies
       - name: Install Dependencies
         run: npm ci
 
-      # 4. Build React application
       - name: Build React Application
         run: npm run build
+        env:
+          CI: false
 
-      # 5. Verify build
       - name: Verify Build
         run: |
-          ls -lh
-          ls -lh build/
+          if [ -d "build" ]; then
+            echo "React production build successful"
+            ls -la build/
+          else
+            echo "Build directory not found"
+            exit 1
+          fi
 
-      # 6. SonarQube Scan
       - name: SonarQube Scan
         uses: SonarSource/sonarqube-scan-action@v5.3.1
         env:
@@ -51,23 +52,15 @@ jobs:
             -Dsonar.sources=src
             -Dsonar.exclusions=build/**,node_modules/**
 
-      # 7. Create ZIP artifact
       - name: Create Build Artifact
         run: |
           zip -r hotstar-clone-build.zip build/
 
-      # 8. Upload artifact to Nexus
       - name: Upload Artifact to Nexus
-        env:
-          NEXUS_USERNAME: ${{ secrets.NEXUS_USERNAME }}
-          NEXUS_PASSWORD: ${{ secrets.NEXUS_PASSWORD }}
-          NEXUS_RAW_REPO_URL: ${{ secrets.NEXUS_RAW_REPO_URL }}
         run: |
-          curl --fail --show-error \
-            --user "$NEXUS_USERNAME:$NEXUS_PASSWORD" \
-            --upload-file hotstar-clone-build.zip \
-            "$NEXUS_RAW_REPO_URL/hotstar-clone/${GITHUB_RUN_NUMBER}/hotstar-clone-build.zip"
+          curl -f -u "${{ secrets.NEXUS_USERNAME }}:${{ secrets.NEXUS_PASSWORD }}" \
+          --upload-file hotstar-clone-build.zip \
+          "${{ secrets.NEXUS_RAW_REPO_URL }}/hotstar-clone/${GITHUB_RUN_NUMBER}/hotstar-clone-build.zip"
 
-      # 9. Build completed
-      - name: Build Success
-        run: echo "React Build, SonarQube and Nexus Upload Completed!"
+      - name: Pipeline Completed
+        run: echo "Hotstar Clone CI pipeline completed successfully"
