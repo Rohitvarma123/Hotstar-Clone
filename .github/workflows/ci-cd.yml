@@ -80,6 +80,7 @@ jobs:
       - name: Build Job Completed
         run: echo "React build, SonarQube and Nexus completed"
 
+
   # ==========================================
   # JOB 2: DOCKER BUILD AND ECR PUBLIC PUSH
   # ==========================================
@@ -94,7 +95,7 @@ jobs:
       - name: Checkout Source Code
         uses: actions/checkout@v4
 
-      # OIDC authentication
+      # AWS OIDC authentication
       - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
@@ -103,12 +104,11 @@ jobs:
           aws-region: ap-northeast-1
           audience: sts.amazonaws.com
 
-      # Verify assumed role
       - name: Verify AWS Identity
         run: |
           aws sts get-caller-identity
 
-      # ECR Public authentication
+      # ECR Public login
       - name: Login to Amazon ECR Public
         run: |
           aws ecr-public get-login-password \
@@ -117,12 +117,12 @@ jobs:
             --username AWS \
             --password-stdin public.ecr.aws
 
-      # Docker build
+      # Build Docker image
       - name: Build Docker Image
         run: |
           docker build -t hotstar-clone:${GITHUB_SHA} .
 
-      # Docker tagging
+      # Tag Docker image
       - name: Tag Docker Image
         run: |
           docker tag hotstar-clone:${GITHUB_SHA} \
@@ -131,18 +131,22 @@ jobs:
           docker tag hotstar-clone:${GITHUB_SHA} \
             ${ECR_PUBLIC_REPOSITORY}:latest
 
-      # Push to ECR Public
+      # Push Docker image
       - name: Push Docker Image to ECR Public
         run: |
           docker push ${ECR_PUBLIC_REPOSITORY}:${GITHUB_SHA}
           docker push ${ECR_PUBLIC_REPOSITORY}:latest
+
+      - name: Docker Job Completed
+        run: echo "Docker image pushed to ECR Public successfully"
+
 
   # ==========================================
   # JOB 3: ECS FARGATE DEPLOYMENT
   # ==========================================
 
   deploy-ecs:
-    name: Deploy to ECS Fargate
+    name: Deploy to AWS ECS Fargate
     runs-on: ubuntu-latest
     needs: docker
 
@@ -180,85 +184,101 @@ jobs:
           cluster: hotstar-clone-cluster
           wait-for-service-stability: true
 
+      - name: ECS Deployment Completed
+        run: echo "Hotstar Clone ECS deployment completed"
+
+
   # ==========================================
-  # JOB 4: EKS FARGATE DEPLOYMENT
+  # JOB 4: AWS EKS DEPLOYMENT
   # ==========================================
+
   deploy-eks:
-   name: Deploy to AWS EKS
-   runs-on: ubuntu-latest
-   needs: docker
+    name: Deploy to AWS EKS
+    runs-on: ubuntu-latest
+    needs: docker
 
-   steps:
+    steps:
 
-    # Step 1: Checkout source code
-    - name: Checkout Source Code
-      uses: actions/checkout@v4
+      # Step 1: Checkout source code
+      - name: Checkout Source Code
+        uses: actions/checkout@v4
 
-    # Step 2: Configure AWS credentials using OIDC
-    - name: Configure AWS Credentials
-      uses: aws-actions/configure-aws-credentials@v4
-      with:
-        role-to-assume: arn:aws:iam::973294445442:role/GitHubHotstarDeployRole
-        role-session-name: HotstarEKSDeployment
-        aws-region: ap-northeast-1
+      # Step 2: Configure AWS credentials using OIDC
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::973294445442:role/GitHubHotstarDeployRole
+          role-session-name: HotstarEKSDeployment
+          aws-region: ap-northeast-1
+          audience: sts.amazonaws.com
 
-    # Step 3: Install kubectl
-    - name: Install kubectl
-      run: |
-        curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
-        chmod +x kubectl
-        sudo mv kubectl /usr/local/bin/kubectl
-        kubectl version --client
+      # Step 3: Verify AWS identity
+      - name: Verify AWS Identity
+        run: |
+          aws sts get-caller-identity
 
-    # Step 4: Update EKS kubeconfig
-    - name: Update EKS Kubeconfig
-      run: |
-        aws eks update-kubeconfig \
-          --region ap-northeast-1 \
-          --name hotstar-clone-eks
+      # Step 4: Install kubectl
+      - name: Install kubectl
+        run: |
+          curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+          chmod +x kubectl
+          sudo mv kubectl /usr/local/bin/kubectl
+          kubectl version --client
 
-    # Step 5: Verify EKS connection
-    - name: Verify EKS Connection
-      run: |
-        kubectl get nodes
+      # Step 5: Update EKS kubeconfig
+      - name: Update EKS Kubeconfig
+        run: |
+          aws eks update-kubeconfig \
+            --region ap-northeast-1 \
+            --name hotstar-clone-eks
 
-    # Step 6: Create namespace
-    - name: Create Namespace
-      run: |
-        kubectl create namespace hotstar \
-          --dry-run=client -o yml | kubectl apply -f -
+      # Step 6: Verify EKS connection
+      - name: Verify EKS Connection
+        run: |
+          kubectl get nodes
 
-    # Step 7: Verify Kubernetes manifest
-    - name: Verify Kubernetes Files
-      run: |
-        ls -la K8S/
-        test -f K8S/deployment.yml
+      # Step 7: Create namespace
+      - name: Create Namespace
+        run: |
+          kubectl create namespace hotstar \
+            --dry-run=client -o yaml | kubectl apply -f -
 
-    # Step 8: Apply deployment
-    - name: Apply Kubernetes Deployment
-      run: |
-        kubectl apply -f K8S/deployment.yml
+      # Step 8: Verify Kubernetes files
+      - name: Verify Kubernetes Files
+        run: |
+          ls -la K8S/
+          test -f K8S/deployment.yml
+          test -f K8S/service.yml
 
-    # Step 9: Update application image
-    - name: Update Kubernetes Image
-      run: |
-        kubectl set image deployment/hotstar-clone \
-          hotstar-clone=public.ecr.aws/e4i9q9h4/hotstar-clone:${GITHUB_SHA} \
-          -n hotstar
+      # Step 9: Apply Kubernetes deployment
+      - name: Apply Kubernetes Deployment
+        run: |
+          kubectl apply -f K8S/deployment.yml
 
-    # Step 10: Verify deployment
-    - name: Verify EKS Deployment
-      run: |
-        kubectl rollout status deployment/hotstar-clone \
-          -n hotstar \
-          --timeout=180s
+      # Step 10: Update application image
+      - name: Update Kubernetes Image
+        run: |
+          kubectl set image deployment/hotstar-clone \
+            hotstar-clone=public.ecr.aws/e4i9q9h4/hotstar-clone:${GITHUB_SHA} \
+            -n hotstar
 
-        kubectl get deployments -n hotstar
-        kubectl get pods -n hotstar -o wide
-        kubectl get services -n hotstar
+      # Step 11: Apply Kubernetes service
+      - name: Apply Kubernetes Service
+        run: |
+          kubectl apply -f K8S/service.yml
 
-    # Step 11: Deployment completed
-    - name: Deployment Completed
-      run: |
-        echo "Hotstar Clone AWS EKS deployment completed successfully"
+      # Step 12: Verify deployment
+      - name: Verify EKS Deployment
+        run: |
+          kubectl rollout status deployment/hotstar-clone \
+            -n hotstar \
+            --timeout=180s
 
+          kubectl get deployments -n hotstar
+          kubectl get pods -n hotstar -o wide
+          kubectl get services -n hotstar
+
+      # Step 13: Deployment completed
+      - name: Deployment Completed
+        run: |
+          echo "Hotstar Clone AWS EKS deployment completed successfully"
