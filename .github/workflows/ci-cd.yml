@@ -1,4 +1,5 @@
-name: Maven Build, SonarQube and Nexus
+
+name: React Build, SonarQube and Nexus
 
 on:
   push:
@@ -12,68 +13,61 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-
+      # 1. Checkout source code
       - name: Checkout Source
         uses: actions/checkout@v4
 
-      # Build using Java 8
-      - name: Setup Java 8
-        uses: actions/setup-java@v4
+      # 2. Setup Node.js
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
         with:
-          distribution: temurin
-          java-version: '8'
-          cache: maven
+          node-version: '20'
+          cache: npm
 
-      - name: Build Project
-        run: mvn clean install -DskipTests
+      # 3. Install dependencies
+      - name: Install Dependencies
+        run: npm ci
 
-      - name: Verify WAR
-        run: ls -lh target
+      # 4. Build React application
+      - name: Build React Application
+        run: npm run build
 
-      # Java 17 only for SonarQube
-      - name: Setup Java 17
-        uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: '17'
+      # 5. Verify build
+      - name: Verify Build
+        run: |
+          ls -lh
+          ls -lh build/
 
+      # 6. SonarQube Scan
       - name: SonarQube Scan
+        uses: SonarSource/sonarqube-scan-action@v5.3.1
         env:
           SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-        run: |
-          mvn sonar:sonar \
-            -Dsonar.projectKey=petclinic \
-            -Dsonar.projectName=petclinic \
-            -Dsonar.host.url=$SONAR_HOST_URL \
-            -Dsonar.token=$SONAR_TOKEN
-
-      # Switch back to Java 8
-      - name: Setup Java 8 Again
-        uses: actions/setup-java@v4
         with:
-          distribution: temurin
-          java-version: '8'
+          args: >
+            -Dsonar.projectKey=hotstar-clone
+            -Dsonar.projectName=hotstar-clone
+            -Dsonar.sources=src
+            -Dsonar.exclusions=build/**,node_modules/**
 
-      # Configure Maven Settings
-      - name: Configure Maven settings.xml
+      # 7. Create ZIP artifact
+      - name: Create Build Artifact
         run: |
-          mkdir -p ~/.m2
-          cat > ~/.m2/settings.xml <<EOF
-          <settings>
-            <servers>
-              <server>
-                <id>nexus</id>
-                <username>${{ secrets.NEXUS_USERNAME }}</username>
-                <password>${{ secrets.NEXUS_PASSWORD }}</password>
-              </server>
-            </servers>
-          </settings>
-          EOF
+          zip -r hotstar-clone-build.zip build/
 
-      # Deploy to Nexus
-      - name: Deploy Artifact to Nexus
+      # 8. Upload artifact to Nexus
+      - name: Upload Artifact to Nexus
+        env:
+          NEXUS_USERNAME: ${{ secrets.NEXUS_USERNAME }}
+          NEXUS_PASSWORD: ${{ secrets.NEXUS_PASSWORD }}
+          NEXUS_RAW_REPO_URL: ${{ secrets.NEXUS_RAW_REPO_URL }}
         run: |
-          mvn deploy \
-            -DskipTests \
-            -DaltDeploymentRepository=nexus::default::${{ secrets.NEXUS_REPO_URL }}
+          curl --fail --show-error \
+            --user "$NEXUS_USERNAME:$NEXUS_PASSWORD" \
+            --upload-file hotstar-clone-build.zip \
+            "$NEXUS_RAW_REPO_URL/hotstar-clone/${GITHUB_RUN_NUMBER}/hotstar-clone-build.zip"
+
+      # 9. Build completed
+      - name: Build Success
+        run: echo "React Build, SonarQube and Nexus Upload Completed!"
