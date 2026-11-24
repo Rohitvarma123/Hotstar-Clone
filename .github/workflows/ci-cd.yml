@@ -64,3 +64,67 @@ jobs:
 
       - name: Pipeline Completed
         run: echo "Hotstar Clone CI pipeline completed successfully"
+      
+      # Configure AWS credentials
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ap-south-1
+
+      # Login to ECR
+      - name: Login to Amazon ECR
+        id: ecr-login
+        uses: aws-actions/amazon-ecr-login@v2
+
+      # Build and push Docker image
+      - name: Build and Push Docker Image
+        env:
+          REGISTRY: ${{ steps.ecr-login.outputs.registry }}
+          REPOSITORY: hotstar-clone
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          docker build -t $REGISTRY/$REPOSITORY:$IMAGE_TAG .
+          docker push $REGISTRY/$REPOSITORY:$IMAGE_TAG
+
+          echo "IMAGE=$REGISTRY/$REPOSITORY:$IMAGE_TAG" >> $GITHUB_ENV
+
+      # Deploy to ECS
+      - name: Render ECS Task Definition
+        id: render-container
+        uses: aws-actions/amazon-ecs-render-task-definition@v1
+        with:
+          task-definition: ecs-task-definition.json
+          container-name: hotstar-clone
+          image: ${{ env.IMAGE }}
+
+      - name: Deploy to ECS
+        uses: aws-actions/amazon-ecs-deploy-task-definition@v2
+        with:
+          task-definition: ${{ steps.render-container.outputs.task-definition }}
+          service: hotstar-clone-service
+          cluster: hotstar-clone-cluster
+          wait-for-service-stability: true
+
+      # Configure EKS
+      - name: Update EKS Kubeconfig
+        run: |
+          aws eks update-kubeconfig \
+            --region ap-south-1 \
+            --name hotstar-clone-eks
+
+      # Deploy to Kubernetes
+      - name: Deploy to EKS
+        run: |
+          kubectl apply -f k8s/deployment.yaml
+
+          kubectl set image deployment/hotstar-clone \
+            hotstar-clone=${{ env.IMAGE }}
+
+          kubectl rollout status deployment/hotstar-clone \
+            --timeout=180s
+
+          kubectl get pods
+          kubectl get services
+
