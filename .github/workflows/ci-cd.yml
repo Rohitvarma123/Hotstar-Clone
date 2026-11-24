@@ -183,59 +183,82 @@ jobs:
   # ==========================================
   # JOB 4: EKS FARGATE DEPLOYMENT
   # ==========================================
-
   deploy-eks:
-    name: Deploy to EKS Fargate
-    runs-on: ubuntu-latest
-    needs: docker
+   name: Deploy to AWS EKS
+   runs-on: ubuntu-latest
+   needs: docker
 
-    steps:
+   steps:
 
-      - name: Checkout Source Code
-        uses: actions/checkout@v4
+    # Step 1: Checkout source code
+    - name: Checkout Source Code
+      uses: actions/checkout@v4
 
-      - name: Configure AWS Credentials
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          role-to-assume: arn:aws:iam::973294445442:role/GitHubHotstarDeployRole
-          role-session-name: HotstarEKSDeployment
-          aws-region: ap-northeast-1
+    # Step 2: Configure AWS credentials using OIDC
+    - name: Configure AWS Credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        role-to-assume: arn:aws:iam::973294445442:role/GitHubHotstarDeployRole
+        role-session-name: HotstarEKSDeployment
+        aws-region: ap-northeast-1
 
-      - name: Install kubectl
-        uses: azure/setup-kubectl@v4
-        with:
-          version: latest
+    # Step 3: Install kubectl
+    - name: Install kubectl
+      run: |
+        curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+        chmod +x kubectl
+        sudo mv kubectl /usr/local/bin/kubectl
+        kubectl version --client
 
-      - name: Update EKS Kubeconfig
-        run: |
-          aws eks update-kubeconfig \
-            --region ap-northeast-1 \
-            --name hotstar-clone-eks
+    # Step 4: Update EKS kubeconfig
+    - name: Update EKS Kubeconfig
+      run: |
+        aws eks update-kubeconfig \
+          --region ap-northeast-1 \
+          --name hotstar-clone-eks
 
-      - name: Create Namespace If Not Exists
-        run: |
-          kubectl create namespace hotstar \
-            --dry-run=client -o yaml | kubectl apply -f -
+    # Step 5: Verify EKS connection
+    - name: Verify EKS Connection
+      run: |
+        kubectl get nodes
 
-      - name: Apply Kubernetes Deployment
-        run: |
-          kubectl apply -f k8s/deployment.yaml
+    # Step 6: Create namespace
+    - name: Create Namespace
+      run: |
+        kubectl create namespace hotstar \
+          --dry-run=client -o yaml | kubectl apply -f -
 
-      - name: Update Kubernetes Image
-        run: |
-          kubectl set image deployment/hotstar-clone \
-            hotstar-clone=public.ecr.aws/e4i9q9h4/hotstar-clone:${GITHUB_SHA} \
-            -n hotstar
+    # Step 7: Verify Kubernetes manifest
+    - name: Verify Kubernetes Files
+      run: |
+        ls -la K8S/
+        test -f K8S/deployment.yaml
 
-      - name: Verify EKS Deployment
-        run: |
-          kubectl rollout status deployment/hotstar-clone \
-            -n hotstar \
-            --timeout=180s
+    # Step 8: Apply deployment
+    - name: Apply Kubernetes Deployment
+      run: |
+        kubectl apply -f K8S/deployment.yaml
 
-          kubectl get pods -n hotstar -o wide
-          kubectl get services -n hotstar
+    # Step 9: Update application image
+    - name: Update Kubernetes Image
+      run: |
+        kubectl set image deployment/hotstar-clone \
+          hotstar-clone=public.ecr.aws/e4i9q9h4/hotstar-clone:${GITHUB_SHA} \
+          -n hotstar
 
-      - name: Deployment Completed
-        run: |
-          echo "Hotstar Clone ECS and EKS deployments completed"
+    # Step 10: Verify deployment
+    - name: Verify EKS Deployment
+      run: |
+        kubectl rollout status deployment/hotstar-clone \
+          -n hotstar \
+          --timeout=180s
+
+        kubectl get deployments -n hotstar
+        kubectl get pods -n hotstar -o wide
+        kubectl get services -n hotstar
+
+    # Step 11: Deployment completed
+    - name: Deployment Completed
+      run: |
+        echo "Hotstar Clone AWS EKS deployment completed successfully"
+
