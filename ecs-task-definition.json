@@ -1,0 +1,24 @@
+
+{
+  "family": "hotstar-clone-task",
+  "networkMode": "awsvpc",
+  "requiresCompatibilities": [
+    "FARGATE"
+  ],
+  "cpu": "256",
+  "memory": "512",
+  "executionRoleArn": "arn:aws:iam::973294445442:role/ecsTaskExecutionRole",
+  "containerDefinitions": [
+    {
+      "name": "hotstar-clone",
+      "image": "public.ecr.aws/e4i9q9h4/hotstar-clone:latest",
+      "essential": true,
+      "portMappings": [
+        {
+          "containerPort": 80,
+          "protocol": "tcp"
+        }
+      ]
+    }
+  ]
+}
