@@ -226,18 +226,18 @@ jobs:
     - name: Create Namespace
       run: |
         kubectl create namespace hotstar \
-          --dry-run=client -o yaml | kubectl apply -f -
+          --dry-run=client -o yml | kubectl apply -f -
 
     # Step 7: Verify Kubernetes manifest
     - name: Verify Kubernetes Files
       run: |
         ls -la K8S/
-        test -f K8S/deployment.yaml
+        test -f K8S/deployment.yml
 
     # Step 8: Apply deployment
     - name: Apply Kubernetes Deployment
       run: |
-        kubectl apply -f K8S/deployment.yaml
+        kubectl apply -f K8S/deployment.yml
 
     # Step 9: Update application image
     - name: Update Kubernetes Image
