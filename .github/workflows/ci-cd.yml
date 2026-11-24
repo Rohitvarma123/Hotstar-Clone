@@ -5,6 +5,7 @@ on:
   push:
     branches:
       - master
+
   workflow_dispatch:
 
 permissions:
@@ -12,17 +13,19 @@ permissions:
   id-token: write
 
 env:
-  AWS_REGION: ap-south-1
+  AWS_REGION: ap-northeast-1
   ECR_PUBLIC_REGION: us-east-1
   ECR_PUBLIC_REGISTRY: public.ecr.aws
   ECR_PUBLIC_REPOSITORY: public.ecr.aws/e4i9q9h4/hotstar-clone
 
 jobs:
+
   build:
-    name: Build, Scan and Deploy
+    name: React Build, SonarQube and Nexus
     runs-on: ubuntu-latest
 
     steps:
+
       # 1. Checkout source code
       - name: Checkout Source Code
         uses: actions/checkout@v4
@@ -48,7 +51,7 @@ jobs:
       - name: Verify Build
         run: |
           if [ -d "build" ]; then
-            echo "React production build successful"
+            echo "React build successful"
             ls -la build/
           else
             echo "Build directory not found"
@@ -68,7 +71,7 @@ jobs:
             -Dsonar.sources=src
             -Dsonar.exclusions=build/**,node_modules/**
 
-      # 7. Create build artifact
+      # 7. Create ZIP artifact
       - name: Create Build Artifact
         run: |
           zip -r hotstar-clone-build.zip build/
@@ -81,35 +84,51 @@ jobs:
             --upload-file hotstar-clone-build.zip \
             "${{ secrets.NEXUS_RAW_REPO_URL }}/hotstar-clone/${GITHUB_RUN_NUMBER}/hotstar-clone-build.zip"
 
-      # 9. Configure AWS credentials using OIDC
+      # 9. Pipeline completed
+      - name: Build Pipeline Completed
+        run: echo "React build, SonarQube and Nexus upload completed"
+
+  deploy:
+    name: Docker, ECR, ECS and EKS Deployment
+    runs-on: ubuntu-latest
+    needs: build
+
+    steps:
+
+      # 1. Checkout source code
+      - name: Checkout Source Code
+        uses: actions/checkout@v4
+
+      # 2. Configure AWS credentials using OIDC
       - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ vars.AWS_GITHUB_ACTIONS_ROLE_ARN }}
           role-session-name: HotstarGitHubActions
-          aws-region: ${{ env.AWS_REGION }}
+          aws-region: ap-northeast-1
+          audience: sts.amazonaws.com
 
-      # 10. Verify AWS identity
+      # 3. Verify AWS identity
       - name: Verify AWS Identity
         run: |
           aws sts get-caller-identity
 
-      # 11. Login to Amazon ECR Public
+      # 4. Login to Amazon ECR Public
       - name: Login to Amazon ECR Public
         run: |
           aws ecr-public get-login-password \
-            --region $ECR_PUBLIC_REGION \
+            --region us-east-1 \
           | docker login \
             --username AWS \
-            --password-stdin $ECR_PUBLIC_REGISTRY
+            --password-stdin public.ecr.aws
 
-      # 12. Build Docker image
+      # 5. Build Docker image
       - name: Build Docker Image
         run: |
           docker build \
             -t hotstar-clone:${GITHUB_SHA} .
 
-      # 13. Tag Docker image
+      # 6. Tag Docker image
       - name: Tag Docker Image
         run: |
           docker tag hotstar-clone:${GITHUB_SHA} \
@@ -118,7 +137,7 @@ jobs:
           docker tag hotstar-clone:${GITHUB_SHA} \
             ${ECR_PUBLIC_REPOSITORY}:latest
 
-      # 14. Push image to ECR Public
+      # 7. Push Docker image to ECR Public
       - name: Push Docker Image to ECR Public
         run: |
           docker push ${ECR_PUBLIC_REPOSITORY}:${GITHUB_SHA}
@@ -126,7 +145,7 @@ jobs:
 
           echo "IMAGE=${ECR_PUBLIC_REPOSITORY}:${GITHUB_SHA}" >> $GITHUB_ENV
 
-      # 15. Render ECS task definition
+      # 8. Render ECS task definition
       - name: Render ECS Task Definition
         id: render-container
         uses: aws-actions/amazon-ecs-render-task-definition@v1
@@ -135,7 +154,7 @@ jobs:
           container-name: hotstar-clone
           image: ${{ env.IMAGE }}
 
-      # 16. Deploy to ECS Fargate
+      # 9. Deploy to ECS Fargate
       - name: Deploy to ECS
         uses: aws-actions/amazon-ecs-deploy-task-definition@v2
         with:
@@ -144,29 +163,35 @@ jobs:
           cluster: hotstar-clone-cluster
           wait-for-service-stability: true
 
-      # 17. Configure EKS kubeconfig
+      # 10. Update EKS kubeconfig
       - name: Update EKS Kubeconfig
         run: |
           aws eks update-kubeconfig \
-            --region $AWS_REGION \
+            --region ap-northeast-1 \
             --name hotstar-clone-eks
 
-      # 18. Deploy to EKS
-      - name: Deploy to EKS
+      # 11. Deploy Kubernetes resources
+      - name: Apply Kubernetes Deployment
         run: |
           kubectl apply -f k8s/deployment.yaml
 
+      # 12. Update Kubernetes image
+      - name: Update Kubernetes Image
+        run: |
           kubectl set image deployment/hotstar-clone \
             hotstar-clone=${IMAGE}
 
+      # 13. Check Kubernetes rollout
+      - name: Verify EKS Deployment
+        run: |
           kubectl rollout status deployment/hotstar-clone \
             --timeout=180s
 
           kubectl get pods -o wide
           kubectl get services
 
-      # 19. Pipeline completion
-      - name: Pipeline Completed
+      # 14. Final status
+      - name: Deployment Completed
         run: |
-          echo "Hotstar Clone CI/CD completed successfully"
-          echo "Docker image: ${IMAGE}"
+          echo "Hotstar Clone deployment successful"
+          echo "ECR Image: ${IMAGE}"
